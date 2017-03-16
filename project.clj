@@ -1,4 +1,4 @@
-(defproject io.singer/singer "0.1.0-SNAPSHOT"
+(defproject io.singer/singer "0.1.0"
   :description "FIXME: write description"
   :url "http://singer.io"
   :license {:name "Apache License 2.0"
