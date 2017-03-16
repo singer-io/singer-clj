@@ -1,14 +1,17 @@
 (ns io.singer
   (:require [clojure.data.json :as json]
-            [clojure.tools.cli :as cli])
+            [clojure.tools.cli :as cli]
+            [clojure.java.io :as io])
   (:import [java.io BufferedReader]))
 
-(defn require [m k]
+;;; Private helper functions for parsing messages
+
+(defn- require-key [m k]
   (or (m k)
       (throw (Exception. (str k " is missing in " m)))))
 
-(defn require-string [m k]
-  (let [v (require m k)]
+(defn- require-string [m k]
+  (let [v (require-key m k)]
     (if (string? v)
       v
       (throw (Exception. (str k  " must be a string, got " v " in " k))))))
@@ -20,7 +23,7 @@
   (require-string m "stream"))
 
 (defn- msg-schema [m]
-  (require m "schema"))
+  (require-key m "schema"))
 
 (defn- msg-key-properties [m]
   (let [res (m "key_properties")]
@@ -30,11 +33,13 @@
       res
       (throw (Exception. (str "key_properties must be a list of strings, got " res " in " m))))))
 
-(defn- msg-record [m] (require m "record"))
-(defn- msg-value [m] (require m "value"))
+(defn- msg-record [m] (require-key m "record"))
+(defn- msg-value [m] (require-key m "value"))
+
+;;; Public functions
 
 (defn parse [s]
-
+  "Parses a message and returns it as a map"
   (let [m (json/read-str s)]
     (when-not (map? m)
       (throw (Exception. "Message must be a map, got" s)))
@@ -55,14 +60,15 @@
         {::type ::state
          ::value (m "value")})))
 
-(defn reader []
-  (BufferedReader. *in*))
-
-(defn next-message [rdr]
-  (let [s (.readLine rdr)]
+(defn next-message
+  "Reads the next message from *in* and parses it."
+  []
+  (when-let [s (.readLine *in*)]
     (parse s)))
 
-(defn write-message [m]
+(defn write-message
+  "Writes a message to *out*"
+  [m]
   (json/write
    (case (::type m)
     ::record
@@ -90,19 +96,24 @@
 (defn write-schema [stream schema key-properties]
   (write-message {::type ::schema ::stream stream ::schema schema ::key-properties key-properties}))
 
-(comment
+(defn load-json [path]
+  (with-open [r (io/reader path)]
+    (json/read r)))
 
-(parse-message "{\"type\": \"RECORD\", \"record\": {\"name\": \"mike\"}, \"stream\": \"people\"}")
+(def opt-config
+  ["-c" "--config CONFIG" "Config JSON file"
+   :parse-fn load-json])
 
-(parse-message "{\"type\": \"SCHEMA\", \"schema\": {\"type\": \"object\", \"properties\": {\"id\": \"integer\", \"name\": \"string\"}}, \"stream\": \"people\", \"key_properties\": [\"id\"]}")
+(def opt-state
+  ["-s" "--state STATE" "State JSON file"
+   :parse-fn load-json])
 
-(parse-message "{\"type\": \"STATE\", \"value\": {\"seq\": 1}}")
+(def tap-options
+  [opt-config
+   opt-state])
 
+(def target-options
+  [opt-config])
 
-(write-record "people" {"id" 1 "name" "mike"})
-(write-state {"seq" 1})
-(write-schema "people"
-              {"type" "object" "properties" {"id" "integer" "name" "string"}}
-              ["id"]))
-
-
+(defn parse-tap-opts [args]
+  (cli/parse-opts args tap-options))
